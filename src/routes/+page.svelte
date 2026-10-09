@@ -21,6 +21,7 @@
   let editingNoteId = $state<string | null>(null);
   let editingName = $state("");
   let pinned = $state(loadPinned());
+  void appWindow.setAlwaysOnTop(pinned);
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
 
   function loadFolders(): Folder[] {
@@ -211,3 +212,5 @@
   .editor:empty:before { content: "直接输入文字…"; color: #777f8c; }
   .empty { padding: 62px 12px; color: #8c96a4; text-align: center; font-size: 12px; }
 </style>
+
+
