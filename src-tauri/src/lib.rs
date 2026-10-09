@@ -6,11 +6,8 @@ pub fn run() {
     let configured_builder = builder
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            let show_item = tauri::menu::MenuItemBuilder::with_id("show", "显示便签").build(app)?;
-            let new_item = tauri::menu::MenuItemBuilder::with_id("new", "新建笔记").build(app)?;
-            let pin_item = tauri::menu::MenuItemBuilder::with_id("pin", "切换置顶").build(app)?;
             let quit_item = tauri::menu::MenuItemBuilder::with_id("quit", "退出应用").build(app)?;
-            let menu = tauri::menu::MenuBuilder::new(app).items(&[&show_item, &new_item, &pin_item, &quit_item]).build()?;
+            let menu = tauri::menu::MenuBuilder::new(app).items(&[&quit_item]).build()?;
             let default_icon = app.default_window_icon().cloned();
             let mut tray_builder = tauri::tray::TrayIconBuilder::with_id("quicknotion-tray").menu(&menu).tooltip("QuickNotion");
             if let Some(icon) = default_icon {
@@ -23,18 +20,14 @@ pub fn run() {
                         toggle_main_window(&app_handle);
                     }
                 })
-                .on_menu_event(|app, event| match event.id().as_ref() {
-                    "show" => show_main_window(app),
-                    "new" => show_main_window(app),
-                    "pin" => toggle_pin(app),
-                    "quit" => {
+                .on_menu_event(|app, event| {
+                    if event.id().as_ref() == "quit" {
                         let window = app.get_webview_window("main");
                         if let Some(main_window) = window {
                             let _ = main_window.destroy();
                         }
                         app.exit(0);
                     }
-                    _ => {}
                 })
                 .build(app)?;
             Ok(())
@@ -65,14 +58,6 @@ fn toggle_main_window(app: &tauri::AppHandle) {
         } else {
             show_main_window(app);
         }
-    }
-}
-
-fn toggle_pin(app: &tauri::AppHandle) {
-    let window = app.get_webview_window("main");
-    if let Some(main_window) = window {
-        let current = main_window.is_always_on_top().unwrap_or(false);
-        let _ = main_window.set_always_on_top(!current);
     }
 }
 
