@@ -1,3 +1,5 @@
+use tauri::Manager;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default();
@@ -9,9 +11,11 @@ pub fn run() {
             let pin_item = tauri::menu::MenuItemBuilder::with_id("pin", "切换置顶").build(app)?;
             let quit_item = tauri::menu::MenuItemBuilder::with_id("quit", "退出应用").build(app)?;
             let menu = tauri::menu::MenuBuilder::new(app).items(&[&show_item, &new_item, &pin_item, &quit_item]).build()?;
-            let tray_bytes = include_bytes!("../icons/tray-icon.png");
-            let tray_icon = tauri::image::Image::from_bytes(tray_bytes)?;
-            let tray_builder = tauri::tray::TrayIconBuilder::with_id("quicknotion-tray").icon(tray_icon).menu(&menu).tooltip("QuickNotion");
+            let default_icon = app.default_window_icon().cloned();
+            let mut tray_builder = tauri::tray::TrayIconBuilder::with_id("quicknotion-tray").menu(&menu).tooltip("QuickNotion");
+            if let Some(icon) = default_icon {
+                tray_builder = tray_builder.icon(icon);
+            }
             tray_builder
                 .on_tray_icon_event(|tray, event| {
                     if let tauri::tray::TrayIconEvent::Click { button: tauri::tray::MouseButton::Left, .. } = event {
