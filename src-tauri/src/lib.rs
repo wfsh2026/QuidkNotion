@@ -5,14 +5,17 @@ pub fn run() {
     let builder = tauri::Builder::default();
     let configured_builder = builder
         .plugin(tauri_plugin_opener::init())
+        .invoke_handler(tauri::generate_handler![set_window_always_on_top, hide_main_window, start_window_drag])
         .setup(|app| {
             let quit_item = tauri::menu::MenuItemBuilder::with_id("quit", "退出应用").build(app)?;
             let menu = tauri::menu::MenuBuilder::new(app).items(&[&quit_item]).build()?;
-            let default_icon = app.default_window_icon().cloned();
-            let mut tray_builder = tauri::tray::TrayIconBuilder::with_id("quicknotion-tray").menu(&menu).tooltip("QuickNotion");
-            if let Some(icon) = default_icon {
-                tray_builder = tray_builder.icon(icon);
-            }
+            let icon_bytes = include_bytes!("../icons/tray-icon.png");
+            let decoded_icon = image::load_from_memory(icon_bytes).map_err(|error| error.to_string())?;
+            let rgba_icon = decoded_icon.to_rgba8();
+            let icon_width = rgba_icon.width();
+            let icon_height = rgba_icon.height();
+            let tray_icon = tauri::image::Image::new_owned(rgba_icon.into_raw(), icon_width, icon_height);
+            let tray_builder = tauri::tray::TrayIconBuilder::with_id("quicknotion-tray").icon(tray_icon).menu(&menu).tooltip("QuickNotion");
             tray_builder
                 .on_tray_icon_event(|tray, event| {
                     if let tauri::tray::TrayIconEvent::Click { button: tauri::tray::MouseButton::Left, .. } = event {
@@ -39,6 +42,23 @@ pub fn run() {
             }
         });
     configured_builder.run(tauri::generate_context!()).expect("error while running QuickNotion");
+}
+
+#[tauri::command]
+fn set_window_always_on_top(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    let window = app.get_webview_window("main").ok_or_else(|| "主窗口不存在".to_string())?;
+    window.set_always_on_top(enabled).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn hide_main_window(app: tauri::AppHandle) -> Result<(), String> {
+    let window = app.get_webview_window("main").ok_or_else(|| "主窗口不存在".to_string())?;
+    window.hide().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn start_window_drag(window: tauri::WebviewWindow) -> Result<(), String> {
+    window.start_dragging().map_err(|error| error.to_string())
 }
 
 fn show_main_window(app: &tauri::AppHandle) {

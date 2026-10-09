@@ -1,12 +1,11 @@
 <script lang="ts">
-  import { getCurrentWindow } from "@tauri-apps/api/window";
+  import { invoke } from "@tauri-apps/api/core";
 
   type Note = { id: string; title: string; body: string; updatedAt: number };
   type Folder = { id: string; name: string; notes: Note[] };
 
   const storageKey = "quicknotion-data-v1";
   const pinStorageKey = "quicknotion-pinned-v1";
-  const appWindow = getCurrentWindow();
   const defaultFolders: Folder[] = [
     { id: "work", name: "工作记录", notes: [{ id: "today", title: "今日工作计划", body: "记录今天要完成的事项", updatedAt: Date.now() }] },
     { id: "project", name: "项目资料", notes: [] },
@@ -21,7 +20,7 @@
   let editingNoteId = $state<string | null>(null);
   let editingName = $state("");
   let pinned = $state(loadPinned());
-  void appWindow.setAlwaysOnTop(pinned);
+  void applyPinState(pinned);
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
 
   function loadFolders(): Folder[] {
@@ -119,25 +118,39 @@
     persistFolders();
   }
 
-  async function togglePin(): Promise<void> {
-    pinned = !pinned;
-    localStorage.setItem(pinStorageKey, String(pinned));
-    await appWindow.setAlwaysOnTop(pinned);
+  async function applyPinState(enabled: boolean): Promise<void> {
+    await invoke("set_window_always_on_top", { enabled });
   }
 
-  async function hideWindow(): Promise<void> { await appWindow.hide(); }
+  async function togglePin(): Promise<void> {
+    const nextState = !pinned;
+    try {
+      await applyPinState(nextState);
+      pinned = nextState;
+      localStorage.setItem(pinStorageKey, String(pinned));
+    } catch {
+      pinned = !nextState;
+    }
+  }
+
+  async function hideWindow(): Promise<void> { await invoke("hide_main_window"); }
+
+  async function startWindowDrag(event: MouseEvent): Promise<void> {
+    if (event.button !== 0) return;
+    await invoke("start_window_drag");
+  }
 </script>
 
 <svelte:head><title>QuickNotion</title></svelte:head>
 
 <main class="app-shell">
-  <header class="titlebar" data-tauri-drag-region>
-    <button class="icon-button" type="button" aria-label="返回" onclick={() => (currentFolderId = null)} disabled={!currentFolderId}>‹</button>
+  <header class="titlebar" data-tauri-drag-region onmousedown={startWindowDrag}>
+    <button class="icon-button" type="button" aria-label="返回" onmousedown={(event) => event.stopPropagation()} onclick={() => (currentFolderId = null)} disabled={!currentFolderId}>‹</button>
     <strong>{currentFolder()?.name ?? "便签"}</strong>
     <span class="spacer"></span>
-    <button class="icon-button" type="button" aria-label="新建" onclick={currentFolderId ? createNote : createFolder}>＋</button>
-    <button class:pinned class="icon-button pin-button" type="button" aria-label={pinned ? "取消置顶" : "置顶窗口"} onclick={togglePin}>◆</button>
-    <button class="icon-button" type="button" aria-label="隐藏窗口" onclick={hideWindow}>×</button>
+    <button class="icon-button" type="button" aria-label="新建" onmousedown={(event) => event.stopPropagation()} onclick={currentFolderId ? createNote : createFolder}>＋</button>
+    <button class:pinned class="icon-button pin-button" type="button" aria-label={pinned ? "取消置顶" : "置顶窗口"} onmousedown={(event) => event.stopPropagation()} onclick={togglePin}>◆</button>
+    <button class="icon-button" type="button" aria-label="隐藏窗口" onmousedown={(event) => event.stopPropagation()} onclick={hideWindow}>×</button>
   </header>
 
   <section class="content-list">
@@ -212,5 +225,8 @@
   .editor:empty:before { content: "直接输入文字…"; color: #777f8c; }
   .empty { padding: 62px 12px; color: #8c96a4; text-align: center; font-size: 12px; }
 </style>
+
+
+
 
 
