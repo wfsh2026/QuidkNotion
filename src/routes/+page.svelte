@@ -33,6 +33,7 @@
   let resizeTimer: ReturnType<typeof setTimeout> | undefined;
   let baseWindowSize = $state({ width: 380, height: 560 });
   let windowExpanded = $state(false);
+  let contentListElement: HTMLElement | null = null;
 
   function loadFolders(): Folder[] { const stored = localStorage.getItem(storageKey); if (!stored) return defaultFolders; try { return JSON.parse(stored) as Folder[]; } catch { return defaultFolders; } }
   function loadPinned(): boolean { return localStorage.getItem(pinStorageKey) === "true"; }
@@ -91,7 +92,24 @@
   function moveItem(kind: DragKind, from: number, to: number): void { if (from === to || to < 0) return; if (kind === "folder") { const items = [...folders]; const item = items.splice(from, 1)[0]; items.splice(to, 0, item); folders = items; return; } const folder = currentFolder(); if (!folder) return; const items = [...folder.notes]; const item = items.splice(from, 1)[0]; items.splice(to, 0, item); folder.notes = items; folders = [...folders]; }
 
   function scheduleResize(): void { if (resizeTimer) clearTimeout(resizeTimer); resizeTimer = setTimeout(resizeForContent, 50); }
-  async function resizeForContent(): Promise<void> { if (!openedNoteId || settingsOpen || !windowExpanded) return; const editor = document.querySelector(".editor-panel") as HTMLElement | null; if (!editor) return; const height = Math.max(400, Math.ceil(editor.scrollHeight + 92)); await setWindowSize(baseWindowSize.width, height); }
+  async function resizeForContent(): Promise<void> {
+    if (!openedNoteId || settingsOpen || !windowExpanded || !contentListElement) return;
+    const expandedItem = contentListElement.querySelector<HTMLElement>(`article[data-note-id="${openedNoteId}"]`);
+    if (!expandedItem) return;
+    const nextItem = expandedItem.nextElementSibling as HTMLElement | null;
+    const nextTitle = nextItem?.querySelector<HTMLElement>(".note-row");
+    const visibleBoundary = nextTitle || expandedItem;
+    const listTop = contentListElement.getBoundingClientRect().top;
+    const boundaryBottom = visibleBoundary.getBoundingClientRect().bottom;
+    const bottomPadding = 20;
+    const titlebar = document.querySelector<HTMLElement>(".titlebar");
+    const titlebarHeight = titlebar?.offsetHeight || 44;
+    const requiredHeight = Math.ceil(titlebarHeight + boundaryBottom - listTop + contentListElement.scrollTop + bottomPadding);
+    const currentWindow = getCurrentWindow();
+    const currentSize = await currentWindow.innerSize();
+    if (currentSize.height >= requiredHeight) return;
+    await setWindowSize(baseWindowSize.width, Math.max(400, requiredHeight));
+  }
   async function openSettings(): Promise<void> { settingsOpen = true; currentFolderId = null; openedNoteId = null; await restoreWindowSize(); }
   async function closeSettings(): Promise<void> { settingsOpen = false; await tick(); }
   function keyLabel(event: KeyboardEvent): string { const parts: string[] = []; if (event.ctrlKey) parts.push("CTRL"); if (event.altKey) parts.push("ALT"); if (event.shiftKey) parts.push("SHIFT"); if (event.metaKey) parts.push("META"); const key = event.key.toUpperCase(); if (!["CONTROL", "ALT", "SHIFT", "META"].includes(key)) parts.push(key === " " ? "SPACE" : key); return parts.join("+"); }
@@ -113,11 +131,11 @@
   {#if settingsOpen}
     <section class="settings"><h2>设置</h2><div class="setting-row"><div><strong>显示 / 隐藏便签</strong><small>使用全局快捷键唤起应用</small></div>{#if shortcutEditing}<input class="shortcut-input" value={shortcutDraft} onkeydown={captureShortcut} onblur={() => (shortcutEditing = false)} autofocus />{:else}<button class="shortcut-value" type="button" onclick={() => (shortcutEditing = true)}>{shortcut}</button>{/if}</div>{#if shortcutError}<div class="error">{shortcutError}</div>{/if}<button class="reset-button" type="button" onclick={resetShortcut}>恢复默认快捷键</button></section>
   {:else}
-    <section class="content-list" role="list" data-sort-list={currentFolderId ? "note" : "folder"}>
+    <section class="content-list" role="list" bind:this={contentListElement} data-sort-list={currentFolderId ? "note" : "folder"}>
       {#if !currentFolderId}
         {#if folders.length === 0}<div class="empty">还没有文件夹</div>{:else}{#each folders as folder, index (folder.id)}{#if drag?.kind === "folder" && drag.active && drag.targetIndex === index}<div class="drop-indicator"></div>{/if}<article class:dragging-row={drag?.kind === "folder" && drag?.active && drag?.id === folder.id} class="list-row" role="listitem" data-sort-kind="folder" data-sort-index={index}><button class="drag-handle" type="button" aria-label={`拖动${folder.name}`} onpointerdown={(event) => dragStart(event, "folder", folder.id, folder.name, index)}>⋮⋮</button>{#if editingFolderId === folder.id}<input class="inline-name" bind:value={editingName} onkeydown={handleRenameKey} onblur={finishRename} autofocus />{:else}<button class="row-main" type="button" onclick={() => (currentFolderId = folder.id)}><span class="folder-icon">▣</span><span>{folder.name}</span></button>{/if}<button class="rename-button" type="button" aria-label="重命名文件夹" onclick={() => startFolderRename(folder)}>✎</button><button class="delete-button" type="button" aria-label="删除文件夹" onclick={() => deleteFolder(folder)}>×</button></article>{/each}{#if drag?.kind === "folder" && drag.active && drag.targetIndex === folders.length}<div class="drop-indicator"></div>{/if}{/if}
       {:else}
-        {#if !(currentFolder()?.notes.length ?? 0)}<div class="empty">还没有笔记，点击右上角 ＋ 新建</div>{:else}{#each currentFolder()?.notes ?? [] as note, index (note.id)}{#if drag?.kind === "note" && drag.active && drag.targetIndex === index}<div class="drop-indicator"></div>{/if}<article class:dragging-row={drag?.kind === "note" && drag?.active && drag?.id === note.id} class:expanded={openedNoteId === note.id} class="note-block" role="listitem" data-sort-kind="note" data-sort-index={index}><div class="list-row note-row"><button class="drag-handle" type="button" aria-label={`拖动${note.title}`} onpointerdown={(event) => dragStart(event, "note", note.id, note.title, index)}>⋮⋮</button>{#if editingNoteId === note.id}<input class="inline-name" bind:value={editingName} onkeydown={handleRenameKey} onblur={finishRename} autofocus />{:else}<button class="row-main" type="button" onclick={() => toggleNote(note.id)}><span>{note.title}</span></button>{/if}<button class="rename-button" type="button" aria-label="重命名笔记" onclick={() => startNoteRename(note)}>✎</button><button class="delete-button" type="button" aria-label="删除笔记" onclick={() => deleteNote(note)}>×</button></div>{#if openedNoteId === note.id}<div class="editor-panel"><div class="editor" contenteditable="true" role="textbox" aria-label="笔记正文" use:initializeEditor={note}></div></div>{/if}</article>{/each}{#if drag?.kind === "note" && drag.active && drag.targetIndex === (currentFolder()?.notes.length ?? 0)}<div class="drop-indicator"></div>{/if}{/if}
+        {#if !(currentFolder()?.notes.length ?? 0)}<div class="empty">还没有笔记，点击右上角 ＋ 新建</div>{:else}{#each currentFolder()?.notes ?? [] as note, index (note.id)}{#if drag?.kind === "note" && drag.active && drag.targetIndex === index}<div class="drop-indicator"></div>{/if}<article class:dragging-row={drag?.kind === "note" && drag?.active && drag?.id === note.id} class:expanded={openedNoteId === note.id} class="note-block" role="listitem" data-note-id={note.id} data-sort-kind="note" data-sort-index={index}><div class="list-row note-row"><button class="drag-handle" type="button" aria-label={`拖动${note.title}`} onpointerdown={(event) => dragStart(event, "note", note.id, note.title, index)}>⋮⋮</button>{#if editingNoteId === note.id}<input class="inline-name" bind:value={editingName} onkeydown={handleRenameKey} onblur={finishRename} autofocus />{:else}<button class="row-main" type="button" onclick={() => toggleNote(note.id)}><span>{note.title}</span></button>{/if}<button class="rename-button" type="button" aria-label="重命名笔记" onclick={() => startNoteRename(note)}>✎</button><button class="delete-button" type="button" aria-label="删除笔记" onclick={() => deleteNote(note)}>×</button></div>{#if openedNoteId === note.id}<div class="editor-panel"><div class="editor" contenteditable="true" role="textbox" aria-label="笔记正文" use:initializeEditor={note}></div></div>{/if}</article>{/each}{#if drag?.kind === "note" && drag.active && drag.targetIndex === (currentFolder()?.notes.length ?? 0)}<div class="drop-indicator"></div>{/if}{/if}
       {/if}
     </section>
   {/if}
