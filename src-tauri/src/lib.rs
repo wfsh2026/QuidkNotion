@@ -69,10 +69,13 @@ fn start_window_drag(window: tauri::WebviewWindow) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn resize_main_window(window: tauri::WebviewWindow, height: f64) -> Result<(), String> {
+fn resize_main_window(window: tauri::WebviewWindow, width: f64, height: f64) -> Result<(), String> {
     let current_size = window.outer_size().map_err(|error| error.to_string())?;
+    let requested_width = width.max(320.0).round() as u32;
     let requested_height = height.max(400.0).round() as u32;
-    let size = tauri::PhysicalSize { width: current_size.width, height: requested_height };
+    let fallback_width = current_size.width;
+    let actual_width = if requested_width == 0 { fallback_width } else { requested_width };
+    let size = tauri::PhysicalSize { width: actual_width, height: requested_height };
     window.set_size(tauri::Size::Physical(size)).map_err(|error| error.to_string())
 }
 
