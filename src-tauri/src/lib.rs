@@ -1,4 +1,4 @@
-use tauri::{Emitter, Manager};
+use tauri::{Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -6,7 +6,7 @@ pub fn run() {
     let configured_builder = builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![set_window_always_on_top, hide_main_window, start_window_drag, resize_main_window, toggle_main_window])
+        .invoke_handler(tauri::generate_handler![set_window_always_on_top, hide_main_window, start_window_drag, resize_main_window, toggle_main_window, open_detached_note, close_detached_window])
         .setup(|app| {
             let settings_item = tauri::menu::MenuItemBuilder::with_id("settings", "设置").build(app)?;
             let quit_item = tauri::menu::MenuItemBuilder::with_id("quit", "退出应用").build(app)?;
@@ -45,15 +45,18 @@ pub fn run() {
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
-                let _ = window.hide();
+                if window.label().starts_with("detached-") {
+                    let _ = window.destroy();
+                } else {
+                    let _ = window.hide();
+                }
             }
         });
     configured_builder.run(tauri::generate_context!()).expect("error while running QuickNotion");
 }
 
 #[tauri::command]
-fn set_window_always_on_top(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
-    let window = app.get_webview_window("main").ok_or_else(|| "主窗口不存在".to_string())?;
+fn set_window_always_on_top(window: WebviewWindow, enabled: bool) -> Result<(), String> {
     window.set_always_on_top(enabled).map_err(|error| error.to_string())
 }
 
@@ -66,6 +69,35 @@ fn hide_main_window(app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 fn start_window_drag(window: tauri::WebviewWindow) -> Result<(), String> {
     window.start_dragging().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn open_detached_note(app: tauri::AppHandle, note_id: String) -> Result<(), String> {
+    let label = format!("detached-{}", note_id);
+    if let Some(window) = app.get_webview_window(&label) {
+        window.show().map_err(|error| error.to_string())?;
+        window.set_focus().map_err(|error| error.to_string())?;
+        return Ok(());
+    }
+    let url = format!("index.html?detachedNoteId={}", note_id);
+    let window = WebviewWindowBuilder::new(&app, &label, WebviewUrl::App(url.into()))
+        .title("便签")
+        .inner_size(320.0, 240.0)
+        .min_inner_size(260.0, 160.0)
+        .decorations(false)
+        .resizable(true)
+        .skip_taskbar(true)
+        .build()
+        .map_err(|error| error.to_string())?;
+    window.set_focus().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn close_detached_window(window: WebviewWindow) -> Result<(), String> {
+    if !window.label().starts_with("detached-") {
+        return Err("当前不是独立便签窗口".to_string());
+    }
+    window.destroy().map_err(|error| error.to_string())
 }
 
 #[tauri::command]
